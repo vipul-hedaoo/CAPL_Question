@@ -1,0 +1,110 @@
+/*@!Encoding:1252*/
+includes { }
+
+variables
+{
+  enum AlertState { NORMAL=0, WARNING=1, CRITICAL=2 };
+
+  struct VehicleState
+  {
+    int speed;
+    int doorOpen;
+    int crashDetected;
+    int rollingCounter;
+    enum AlertState alert;
+  };
+
+  struct VehicleState v1;
+
+  message 0x500 VehicleStateMsg;
+  message 0x501 AlertMsg;
+
+  msTimer AlertT;
+}
+
+void ProcessSpeed(int speedRawValue)
+{
+  v1.speed = speedRawValue;
+
+  if(v1.speed > 100)
+    v1.alert = WARNING;
+  else
+    v1.alert = NORMAL;
+}
+
+void UpdateRollingCounter()
+{
+  v1.rollingCounter++;
+
+  if(v1.rollingCounter > 15)
+    v1.rollingCounter = 0;
+
+  AlertMsg.byte(7) = v1.rollingCounter & 0xFF;
+}
+
+void handleEmergencyMode(long state)
+{
+  if(state == 1)
+  {
+    v1.speed = 0;
+    v1.alert = CRITICAL;
+
+    VehicleStateMsg.byte(0)=v1.speed;
+    VehicleStateMsg.byte(1)=v1.doorOpen;
+    VehicleStateMsg.byte(2)=v1.crashDetected;
+    VehicleStateMsg.byte(3)=v1.rollingCounter;
+    VehicleStateMsg.byte(4)=v1.alert;
+
+    output(VehicleStateMsg);
+  }
+}
+
+on start
+{
+  AlertMsg.dlc = 8;
+  VehicleStateMsg.dlc = 8;
+  setTimer(AlertT,300);
+}
+
+on message 0x100
+{
+  ProcessSpeed(this.byte(0));
+  UpdateRollingCounter();
+}
+
+on message 0x101
+{
+  v1.doorOpen = this.byte(0);
+
+  if(v1.doorOpen == 1 && v1.speed > 30)
+  {
+    v1.alert = CRITICAL;
+    write("Door Open While Vehicle Moving");
+  }
+}
+
+on message 0x102
+{
+  if(this.byte(0) == 1)
+  {
+    v1.crashDetected = 1;
+    v1.alert = CRITICAL;
+    AlertMsg.byte(0)=0xAA;
+    output(AlertMsg);
+  }
+}
+
+on sysvar_update Vehicle::EmergencyMode
+{
+  handleEmergencyMode(@this);
+}
+
+on timer AlertT
+{
+  UpdateRollingCounter();
+
+  AlertMsg.byte(0)=v1.alert;
+  output(AlertMsg);
+
+  setTimer(AlertT,300);
+}
