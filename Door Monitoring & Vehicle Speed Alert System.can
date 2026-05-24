@@ -1,0 +1,65 @@
+/*@!Encoding:1252*/
+includes
+{
+  
+}
+
+variables
+{
+  struct VehicleStatus{
+    int speed;
+    int waring;
+    int doorState;
+  };
+  struct VehicleStatus v1;
+  message 0x300 SpeedInfo;
+  message 0x301 DoorInfo;
+  int speedThreshold=80;
+  msTimer speedcheck;
+}
+On start{
+  v1.waring=0;
+  v1.speed=0;
+  v1.doorState=0;
+  SpeedInfo.dlc=0x08;
+  DoorInfo.dlc=0x08;
+  setTimer(speedcheck,200);
+}
+
+On message 0x300{
+  v1.speed=this.byte(0);
+  if(v1.speed>speedThreshold)
+  {
+    v1.waring=1;
+  }
+  else{
+    v1.waring=0;
+  }
+  write("Speed Updated: %d Warning: %d", v1.speed, v1.warning);
+}
+On message 0x301{
+  v1.doorState=this.byte(0)||this.byte(1)||this.byte(2)||this.byte(3);
+  if(v1.speed>20 && v1.doorState==1)
+  {
+    write("Danger! Door open while moving");
+  }
+}
+On timer speedcheck{
+  if(v1.speed>100)
+  {
+    DoorInfo.byte(0)=2;
+    output(DoorInfo);
+  }
+  setTimer(speedcheck,200);
+}
+on sysvar_update Vehicle::EmergencyStop{
+  if(this==1)
+  {
+    v1.speed=0;
+    v1.waring=1;
+    SpeedInfo.byte(0)=v1.speed & 0xFF;
+    SpeedInfo.byte(1)=v1.waring &0xFF;
+    output(SpeedInfo);
+    write("Emergency Stop Activated");
+  }
+}
